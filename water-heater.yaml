@@ -1,0 +1,264 @@
+esphome:
+  name: water-heater
+  friendly_name: Water Heater
+
+esp32:
+  board: esp32-c3-devkitm-1
+  framework:
+    type: esp-idf
+
+external_components:
+  - source:
+      type: git
+      url: https://github.com/Lordhmen/ESPHome_Electrolux-EWH-Centurio-IQ-3.0
+      ref: main
+    refresh: 60s
+    components: [ boiler_climate, tm1650 ]
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+logger:
+
+api:
+  encryption:
+    key: ""
+
+ota:
+  - platform: esphome
+
+i2c:
+  - sda: GPIO2
+    scl: GPIO8
+    scan: false
+
+time:
+  - platform: sntp
+    id: ntp_time
+    servers:
+      - pool.ntp.org
+      - 0.pool.ntp.org
+      - 1.pool.ntp.org
+    on_time_sync:
+      then:
+        - pcf85063.write_time
+
+  - platform: pcf85063
+    id: rtc_time
+
+button:
+  - platform: restart
+    name: "Перезагрузка"
+    icon: "mdi:restart"
+
+text_sensor:
+  - platform: template
+    name: "Статус системы"
+    id: boiler_status
+    icon: "mdi:information"
+
+number:
+  - platform: template
+    name: "BST час запуска"
+    id: bst_hour
+    icon: "mdi:clock-outline"
+    min_value: 0
+    max_value: 23
+    step: 1
+    initial_value: 3
+    restore_value: true
+    optimistic: true
+    unit_of_measurement: "h"
+
+select:
+  - platform: template
+    name: "BST день недели"
+    id: bst_weekday
+    icon: "mdi:calendar-week"
+    options:
+      - "Понедельник"
+      - "Вторник"
+      - "Среда"
+      - "Четверг"
+      - "Пятница"
+      - "Суббота"
+      - "Воскресенье"
+    initial_option: "Воскресенье"
+    restore_value: true
+    optimistic: true
+
+switch:
+  - platform: gpio
+    pin: GPIO18
+    id: relay_07kw
+    restore_mode: ALWAYS_OFF
+
+  - platform: gpio
+    pin: GPIO7
+    id: relay_13kw
+    restore_mode: ALWAYS_OFF
+
+  - platform: template
+    name: "BST (Bacteria Stop)"
+    id: bst_switch
+    icon: "mdi:bacteria"
+    lambda: |-
+      return id(boiler_termostat).is_bst_active();
+    turn_on_action:
+      - lambda: id(boiler_termostat).bst_turn_on();
+    turn_off_action:
+      - lambda: id(boiler_termostat).bst_turn_off();
+
+sensor:
+  - platform: wifi_signal
+    name: "WiFi сигнал"
+    update_interval: 60s
+    icon: "mdi:wifi"
+
+  - platform: template
+    name: "Текущая мощность"
+    id: boiler_power
+    unit_of_measurement: "W"
+    device_class: power
+    state_class: measurement
+    icon: "mdi:lightning-bolt"
+
+  - platform: template
+    name: "Энергия за сегодня"
+    id: boiler_energy_today
+    unit_of_measurement: "Wh"
+    device_class: energy
+    state_class: total_increasing
+    icon: "mdi:solar-power"
+
+  - platform: template
+    name: "Энергия всего"
+    id: boiler_energy_total
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+    icon: "mdi:counter"
+
+  - platform: adc
+    pin: GPIO3
+    id: potentiometer_raw
+    attenuation: 12db
+    update_interval: 300ms
+    filters:
+      - sliding_window_moving_average:
+          window_size: 5
+          send_every: 1
+
+  - platform: adc
+    pin: GPIO1
+    id: ntc_voltage
+    attenuation: auto
+    update_interval: 2s
+    filters:
+      - median:
+          window_size: 15
+          send_every: 5
+          send_first_at: 1
+
+  - platform: resistance
+    id: ntc_resistance
+    sensor: ntc_voltage
+    configuration: DOWNSTREAM
+    resistor: 33kOhm
+    reference_voltage: 3.3V
+
+  - platform: ntc
+    sensor: ntc_resistance
+    id: water_temp
+    name: "Water Temperature"
+    unit_of_measurement: "°C"
+    icon: "mdi:thermometer"
+    calibration:
+      - 33006 -> 25.0°C
+      - 13752 -> 50.0°C
+      - 5933  -> 75.0°C
+
+binary_sensor:
+  - platform: template
+    name: "ТЭН 0.7 кВт"
+    icon: "mdi:heating-coil"
+    lambda: return id(relay_07kw).state;
+
+  - platform: template
+    name: "ТЭН 1.3 кВт"
+    icon: "mdi:heating-coil"
+    lambda: return id(relay_13kw).state;
+
+  - platform: gpio
+    pin:
+      number: GPIO4
+      mode: INPUT_PULLUP
+      inverted: true
+    id: click_switch
+    filters:
+      - delayed_on_off: 20ms
+
+  - platform: gpio
+    pin:
+      number: GPIO5
+      mode: INPUT_PULLUP
+      inverted: true
+    id: power_switch
+    filters:
+      - delayed_on_off: 50ms
+
+  - platform: gpio
+    pin:
+      number: GPIO10
+      mode: INPUT_PULLUP
+      inverted: true
+    id: timer_switch
+    filters:
+      - delayed_on_off: 50ms
+
+climate:
+  - platform: boiler_climate
+    id: boiler_termostat
+    name: "Термостат Бойлера"
+    sensor: water_temp
+    relay_07kw: relay_07kw
+    relay_13kw: relay_13kw
+    display: boiler_display
+    click_switch: click_switch
+    power_button: power_switch
+    timer_button: timer_switch
+    potentiometer: potentiometer_raw
+    bst_hour: bst_hour
+    bst_weekday: bst_weekday
+    status_sensor: boiler_status
+    power_sensor: boiler_power
+    energy_today_sensor: boiler_energy_today
+    energy_total_sensor: boiler_energy_total
+    min_temperature: 35.0°C
+    max_temperature: 75.0°C
+    heat_deadband: 1.0°C
+    heat_overrun: 0.5°C
+    default_target_temperature: 50.0°C
+    default_power_step: ECO
+    update_interval: 200ms
+    heat_action:
+      - lambda: |-
+          ESP_LOGI("boiler", "Нагрев включён (ступень %d)",
+                   static_cast<int>(id(boiler_termostat).get_power_step()));
+    idle_action:
+      - lambda: ESP_LOGI("boiler", "Нагрев завершён.");
+    bst_start_action:
+      - lambda: ESP_LOGI("BST", "Цикл начался.");
+    bst_done_action:
+      - lambda: ESP_LOGI("BST", "Цикл завершён, вода обеззаражена.");
+    on_timer_done:
+      - lambda: ESP_LOGI("timer", "Таймер температура достигнута, бойлер выключен.");
+
+display:
+  - platform: tm1650
+    id: boiler_display
+    segment_map: PGFEDCBA
+    update_interval: 200ms
+    lambda: |-
+      id(boiler_termostat).render_display(it);

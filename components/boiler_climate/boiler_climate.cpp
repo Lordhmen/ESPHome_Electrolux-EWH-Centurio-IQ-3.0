@@ -98,6 +98,7 @@ void BoilerClimate::setup() {
   if (status_sensor_) {
     status_sensor_->publish_state("OK");
   }
+
   if (power_sensor_)        power_sensor_->publish_state(0.0f);
   if (energy_today_sensor_) energy_today_sensor_->publish_state(energy_today_wh_);
   if (energy_total_sensor_) energy_total_sensor_->publish_state(energy_total_wh_ / 1000.0f);
@@ -408,6 +409,7 @@ void BoilerClimate::exit_edit_mode_(bool apply) {
     save_nvs_();
     ESP_LOGI(TAG, "Таймер установлен: %02d:%02d", timer_hour_, timer_minute_);
   } else {
+
     set_system_time_(edit_hour_, edit_minute_);
   }
   this->publish_state();
@@ -422,6 +424,7 @@ void BoilerClimate::check_edit_timeout_() {
 }
 
 void BoilerClimate::set_system_time_(uint8_t hour, uint8_t minute) {
+
   time_t utc_now = ::time(nullptr);
   if (utc_now < 1000000) return;
   struct tm utc_tm = {};
@@ -471,10 +474,12 @@ void BoilerClimate::on_power_button_release_() {
   if (is_in_edit_mode()) return;
 
   if (held >= POWER_LONG_PRESS_MS) {
+
     if (this->mode == climate::CLIMATE_MODE_OFF) return;
     if (is_bst_active()) bst_turn_off();
     else                 bst_turn_on();
   } else {
+
     if (this->mode == climate::CLIMATE_MODE_OFF &&
         power_step_ != PowerStep::ANTI_FREEZE) return;
 
@@ -526,11 +531,13 @@ void BoilerClimate::on_timer_button_release_() {
   if (is_in_edit_mode()) return;
 
   if (held >= TIMER_LONG_PRESS_MS) {
+
     if (this->mode != climate::CLIMATE_MODE_HEAT &&
         timer_state_ != TimerState::ARMED) return;
     enter_edit_mode_(TimerState::SETTING_TIMER);
     edit_last_ms_ = millis();
   } else {
+
     if (timer_state_ == TimerState::ARMED) {
       timer_state_ = TimerState::IDLE;
       timer_fired_ = false;
@@ -561,6 +568,7 @@ void BoilerClimate::on_potentiometer_value_(float raw) {
 
   float target = raw * (min_temp_ - max_temp_) / (2.33f - 0.15f)
                  + max_temp_ - 0.15f * (min_temp_ - max_temp_) / (2.33f - 0.15f);
+
   target = min_temp_ + (max_temp_ - min_temp_) * (2.33f - raw) / (2.33f - 0.15f);
   if (target < min_temp_) target = min_temp_;
   if (target > max_temp_) target = max_temp_;
@@ -692,19 +700,12 @@ void BoilerClimate::apply_action_(climate::ClimateAction a) {
   this->action = a;
   switch (a) {
     case climate::CLIMATE_ACTION_HEATING:
-      if (!heat_check_active_ && !std::isnan(this->current_temperature)) {
-        heat_check_active_     = true;
-        heat_check_start_temp_ = this->current_temperature;
-        heat_check_start_ms_   = millis();
-      }
       if (heat_trigger_) heat_trigger_->trigger();
       break;
     case climate::CLIMATE_ACTION_IDLE:
-      heat_check_active_ = false;
       if (idle_trigger_) idle_trigger_->trigger();
       break;
     case climate::CLIMATE_ACTION_OFF:
-      heat_check_active_ = false;
       if (off_trigger_) off_trigger_->trigger();
       break;
     default: break;
@@ -712,6 +713,7 @@ void BoilerClimate::apply_action_(climate::ClimateAction a) {
 }
 
 void BoilerClimate::render_display(tm1650::TM1650Display &it) {
+
   if (is_in_edit_mode()) {
     if (display_blink_on_) {
       it.print_time(edit_hour_, edit_minute_);
@@ -783,6 +785,7 @@ void BoilerClimate::render_display(tm1650::TM1650Display &it) {
 
   if (timer_state_ == TimerState::ARMED) {
     uint32_t now_ms = millis();
+
     if (now_ms - display_time_cache_ms_ >= TIME_CACHE_MS || display_time_cache_ms_ == 0) {
       time_t tnow = ::time(nullptr);
       if (tnow > 1000000) {
@@ -831,41 +834,36 @@ void BoilerClimate::check_errors_() {
     status = "Датчик температуры недоступен";
     emergency_shutdown = true;
   }
+
   else if (this->current_temperature > OVERHEAT_TEMP) {
     status = "Перегрев";
     emergency_shutdown = true;
   }
+
   else if (::time(nullptr) < 1000000) {
     status = "Время не синхронизировано";
   }
+
   else if (bst_state_ == BstState::RUNNING &&
            millis() - bst_start_ms_ > 4UL * 3600UL * 1000UL) {
     status = "BST: нет нагрева более 4 часов";
     emergency_shutdown = true;
   }
-  else if (heat_check_active_ &&
-           millis() - heat_check_start_ms_ > 30UL * 60UL * 1000UL) {
-    if (!std::isnan(this->current_temperature) &&
-        this->current_temperature < heat_check_start_temp_ + 2.0f) {
-      status = "Нет нагрева более 30 минут";
-      emergency_shutdown = true;
-    } else {
-      heat_check_active_ = false;
-    }
-  }
 
   if (emergency_shutdown && this->mode != climate::CLIMATE_MODE_OFF) {
     ESP_LOGE(TAG, "АВАРИЯ: %s — аварийное отключение!", status.c_str());
+
     if (relay_07kw_) relay_07kw_->turn_off();
     if (relay_13kw_) relay_13kw_->turn_off();
+
     if (bst_state_ == BstState::RUNNING) {
       bst_hold_sec_ = 0;
       bst_state_    = BstState::OFF;
       this->target_temperature = bst_saved_temp_;
     }
     bst_state_         = BstState::OFF;
-    heat_check_active_ = false;
     cancel_timer_();
+
     this->mode   = climate::CLIMATE_MODE_OFF;
     this->action = climate::CLIMATE_ACTION_OFF;
     this->publish_state();
@@ -885,6 +883,7 @@ void BoilerClimate::check_errors_() {
 }
 
 void BoilerClimate::update_energy_() {
+
   float power_w = 0.0f;
   if (relay_07kw_ && relay_13kw_) {
     bool r1 = relay_07kw_->state;
@@ -918,7 +917,8 @@ void BoilerClimate::update_energy_() {
     if (energy_today_sensor_)
       energy_today_sensor_->publish_state(energy_today_wh_);
     if (energy_total_sensor_)
-      energy_total_sensor_->publish_state(energy_total_wh_ / 1000.0f);  // в kWh
+      energy_total_sensor_->publish_state(energy_total_wh_ / 1000.0f);
+
     save_nvs_();
   }
 }
@@ -934,5 +934,5 @@ void BoilerClimate::reset_energy_total() {
   ESP_LOGI(TAG, "Энергия: счётчик сброшен вручную");
 }
 
-}  // namespace boiler_climate
-}  // namespace esphome
+}
+}

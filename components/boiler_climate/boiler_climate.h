@@ -48,6 +48,7 @@ static const char *const TAG = "boiler_climate";
 
 class BoilerClimate : public climate::Climate, public PollingComponent {
  public:
+
   void set_sensor(sensor::Sensor *s)                        { sensor_ = s; }
   void set_relay_07kw(switch_::Switch *s)                   { relay_07kw_ = s; }
   void set_relay_13kw(switch_::Switch *s)                   { relay_13kw_ = s; }
@@ -109,6 +110,7 @@ class BoilerClimate : public climate::Climate, public PollingComponent {
   void control(const climate::ClimateCall &call) override;
 
  protected:
+
   void update_relays_();
   void apply_action_(climate::ClimateAction a);
   void update_nf_();
@@ -206,9 +208,6 @@ class BoilerClimate : public climate::Climate, public PollingComponent {
   uint8_t  energy_last_day_   {255};
   uint32_t energy_last_pub_ms_{0};
 
-  float    heat_check_start_temp_  {0.0f};
-  uint32_t heat_check_start_ms_    {0};
-  bool     heat_check_active_      {false};
   uint32_t bst_start_ms_           {0};
   std::string last_status_         {"OK"};
 
@@ -274,5 +273,5 @@ class BoilerClimateBstTurnOffAction : public Action<Ts...> {
   BoilerClimate *climate_;
 };
 
-}  // namespace boiler_climate
-}  // namespace esphome
+}
+}
